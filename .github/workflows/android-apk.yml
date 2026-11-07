@@ -1,0 +1,60 @@
+name: Build Android APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+      - name: Install JavaScript dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Generate the Android project
+        run: pnpm exec expo prebuild --platform android --no-install --non-interactive
+        env:
+          CI: '1'
+          EXPO_NO_TELEMETRY: '1'
+      - name: Build installable APK
+        run: |
+          chmod +x android/gradlew
+          android/gradlew -p android --no-daemon assembleDebug
+          cp android/app/build/outputs/apk/debug/app-debug.apk DeadZone.apk
+      - name: Keep a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dead-zone-android-apk
+          path: DeadZone.apk
+          retention-days: 30
+      - name: Publish APK on GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=apk-${GITHUB_RUN_ID}
+          gh release create "$tag" DeadZone.apk \
+            --title "Dead Zone: Survival APK #${GITHUB_RUN_NUMBER}" \
+            --notes "Offline Android zombie-survival game. This debug-signed APK is intended for direct installation on Android, not Google Play submission."
